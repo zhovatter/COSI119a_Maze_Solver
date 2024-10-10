@@ -8,7 +8,7 @@ from tf.transformations import euler_from_quaternion
 
 from pid import PID
 
-DESIRED_DIST = 0.3
+DESIRED_DIST = 0.25 #works pretty well with 0.25
 WALL_THRESHOLD = 0.3 #compare this to cos ratio of perpendicular and a lidar point 45 deg behind to see if it has found a wall
 FORWARD_SPEED = 0.1
 TURN_ANGLE_TOLERANCE = 0.01
@@ -22,8 +22,9 @@ class MazeSolverSim:
         self.lidar = None
         self.prevLidar = None
         self.rightLidar = None
+        self.collisionLidar = None #make a front and a left lidar for collision avoidance.
         self.frontLidar = None
-        self.pid = PID(min_val = -0.6, max_val = 0.6, kp = 0.7, ki = 0.1, kd = 10)
+        self.pid = PID(min_val = -0.6, max_val = 0.6, kp = 1.5, ki = 0.05, kd = 40) #best, kp=1.5, ki=0.05, kd=20
         self.speed = 0
         self.angular_vel = 0
         self.my_odom_sub = rospy.Subscriber('my_odom', Point, self.my_odom_cb)
@@ -41,15 +42,18 @@ class MazeSolverSim:
         if self.lidar != None:
             self.prevLidar = self.lidar
         self.lidar = self.cleanLidar(list(msg.ranges))
-        self.rightLidar = self.lidar[230:310]
-        self.frontLidar = self.lidar[357:359]#.append(self.lidar[0:2])
+        self.rightLidar = self.lidar[220:339]
+        self.collisionLidar = self.lidar[340:359]
+        self.collisionLidar.extend(self.lidar[0:130])
+        self.frontLidar = self.lidar[358:359]
+        self.frontLidar.extend(self.lidar[0:1])
         distFromWall = self.dist_to_wall(self.rightLidar)
         #print(self.rightLidar)
         #print(msg.ranges[270])
         #print('dist: ',distFromWall)
         #print('angular_vel: ',self.angular_vel)
         self.angular_vel = self.pid.compute(setpoint = DESIRED_DIST, measured_value = distFromWall)
-        print('dist: ',distFromWall)
+        #print('dist: ',distFromWall)
 
 
         
@@ -63,15 +67,17 @@ class MazeSolverSim:
     def follow_wall(self):
         """Makes the robot follow a wall."""
         rate = rospy.Rate(10)
-        while(self.lidar == None or self.prevLidar == None or self.frontLidar == None):
+        while(self.lidar == None or self.prevLidar == None or self.collisionLidar == None):
             rate.sleep()
             print('hi')
         while not rospy.is_shutdown():
-            if self.detectWall(self.lidar, self.prevLidar):
-                self.move_straight()
-                continue
-            else:
-                print("no wall!")
+            #if self.detectWall(self.lidar, self.prevLidar):
+            #if self.dist_to_wall(self.frontLidar) >= 0.15:
+            self.move_straight()
+            #continue
+            #else:
+                #print("no wall!")
+                #self.turn_in_place()
                 #self.cmd_vel_pub.publish(Twist())
                 #self.turn_to_heading(self.headingToRelative(1.5*math.pi))
             rate.sleep()
@@ -79,11 +85,24 @@ class MazeSolverSim:
 
     def move_straight(self):
         twist = Twist()
-        self.speed = min(0.1, 0.1 * (sum(self.frontLidar)/len(self.frontLidar)))
+        dist = self.dist_to_wall(self.collisionLidar)#self.collisionLidar)
+        if dist < 0.15: self.speed = 0
+        else: self.speed = min(0.1, 0.3 * self.dist_to_wall(self.lidar))#self.collisionLidar))
         twist.linear.x = self.speed
         twist.angular.z = self.angular_vel
        
         self.cmd_vel_pub.publish(twist)
+    
+    def turn_in_place(self):
+        rate = rospy.Rate(1)
+        self.cmd_vel_pub.publish(Twist())
+        twist = Twist()
+        twist.angular.z = 0.1
+        while self.dist_to_wall(self.collisionLidar) < 0.15:
+            self.cmd_vel_pub.publish(twist)
+            rate.sleep()
+            
+
 
     def dist_to_wall(self, rightLidar):
         min = 3.5
@@ -109,6 +128,9 @@ class MazeSolverSim:
             # print(math.cos(math.radians(270-225)))
             #return not ratio >= WALL_THRESHOLD * math.cos(math.radians(260-215))
         return True
+
+    def avg(self, array):
+        return sum(array)/len(array)
     
     def turn_to_heading(self, target_yaw):
         """
