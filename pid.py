@@ -14,10 +14,17 @@ class PID:
 
     def compute(self, setpoint, measured_value):
         error = setpoint - measured_value
-        self.integral += error
+        if (abs(self.integral) <= 1):
+            self.integral += error
+        elif self.integral > 0: self.integral = 1
+        else: self.integral = 1
         self.derivative = error - self.prev_error
         if setpoint == 0 and self.prev_error == 0:
             self.integreal = 0
         pid = self.kp * error + self.ki*self.integral + self.kd * self.derivative
         self.prev_error = error
+        print('error: ', error)
+        print('int: ', self.integral)
+        print('der: ', self.derivative)
+        print('PID: ', pid)
         return np.clip(pid, self.min_val, self.max_val)
