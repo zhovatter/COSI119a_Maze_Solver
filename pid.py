@@ -21,10 +21,12 @@ class PID:
         self.derivative = error - self.prev_error
         if setpoint == 0 and self.prev_error == 0:
             self.integreal = 0
+        self.prev_error = error #previously this was after the pid calculation
+        if abs(error) > 0.3:
+            error = 0.3 * (error/abs(error))
         pid = self.kp * error + self.ki*self.integral + self.kd * self.derivative
-        self.prev_error = error
         print('error: ', error)
-        print('int: ', self.integral)
+        # print('int: ', self.integral)
         print('der: ', self.derivative)
         print('PID: ', pid)
         return np.clip(pid, self.min_val, self.max_val)
