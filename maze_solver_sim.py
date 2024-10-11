@@ -8,7 +8,7 @@ from tf.transformations import euler_from_quaternion
 
 from pid import PID
 
-DESIRED_DIST = 0.25 #works pretty well with 0.25
+DESIRED_DIST = 0.17 #works pretty well with 0.25
 WALL_THRESHOLD = 0.3 #compare this to cos ratio of perpendicular and a lidar point 45 deg behind to see if it has found a wall
 FORWARD_SPEED = 0.1
 TURN_ANGLE_TOLERANCE = 0.01
@@ -42,9 +42,9 @@ class MazeSolverSim:
         if self.lidar != None:
             self.prevLidar = self.lidar
         self.lidar = self.cleanLidar(list(msg.ranges))
-        self.rightLidar = self.lidar[220:339]
-        self.collisionLidar = self.lidar[340:359]
-        self.collisionLidar.extend(self.lidar[0:130])
+        self.rightLidar = self.lidar[220:330]
+        self.collisionLidar = self.lidar[330:359]
+        self.collisionLidar.extend(self.lidar[0:160])
         self.frontLidar = self.lidar[358:359]
         self.frontLidar.extend(self.lidar[0:1])
         distFromWall = self.dist_to_wall(self.rightLidar)
@@ -85,9 +85,11 @@ class MazeSolverSim:
 
     def move_straight(self):
         twist = Twist()
-        dist = self.dist_to_wall(self.collisionLidar)#self.collisionLidar)
-        if dist < 0.15: self.speed = 0
-        else: self.speed = min(0.1, 0.3 * self.dist_to_wall(self.lidar))#self.collisionLidar))
+        collisionDist = self.dist_to_wall(self.collisionLidar)#self.collisionLidar)
+        frontDist = self.dist_to_wall(self.frontLidar)
+        if collisionDist < 0.15: self.speed = 0
+        elif frontDist < 0.25: self.turn_in_place()
+        else: self.speed = min(0.1, 0.1 * self.dist_to_wall(self.collisionLidar),0.1 * frontDist)#self.collisionLidar))
         twist.linear.x = self.speed
         twist.angular.z = self.angular_vel
        
@@ -98,9 +100,11 @@ class MazeSolverSim:
         self.cmd_vel_pub.publish(Twist())
         twist = Twist()
         twist.angular.z = 0.1
-        while self.dist_to_wall(self.collisionLidar) < 0.15:
-            self.cmd_vel_pub.publish(twist)
-            rate.sleep()
+        self.cmd_vel_pub.publish(twist)
+        rate.sleep()
+        # while self.dist_to_wall(self.collisionLidar) < 0.15:
+        #     self.cmd_vel_pub.publish(twist)
+        #     rate.sleep()
             
 
 
