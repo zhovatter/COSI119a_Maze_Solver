@@ -9,7 +9,8 @@ from tf.transformations import euler_from_quaternion
 from pid import PID
 
 DESIRED_DIST = 0.2 #works pretty well with 0.25
-WALL_THRESHOLD = 0.2 #compare this to cos ratio of perpendicular and a lidar point 45 deg behind to see if it has found a wall
+WALL_THRESHOLD = 0.2 
+DETECT_WALL = 1.2#compare this to cos ratio of perpendicular and a lidar point 45 deg behind to see if it has found a wall
 FORWARD_SPEED = 0.1
 TURN_ANGLE_TOLERANCE = 0.01
 MAX_TURN_SPEED = 0.5
@@ -25,7 +26,7 @@ class MazeSolverSim:
         self.collisionLidar = None #make a front and a left lidar for collision avoidance.
         self.upperRightLidar = None
         self.frontLidar = None
-        self.pid = PID(min_val = -0.6, max_val = 0.6, kp = 1.2, ki = 0.05, kd = 40) #best, kp=1.5, ki=0.05, kd=20
+        self.pid = PID(min_val = -0.8, max_val = 0.8, kp = 1, ki = 0.05, kd = 40) #best, kp=1.5, ki=0.05, kd=20
         self.speed = 0
         self.angular_vel = 0
         self.my_odom_sub = rospy.Subscriber('my_odom', Point, self.my_odom_cb)
@@ -43,8 +44,8 @@ class MazeSolverSim:
         if self.lidar != None:
             self.prevLidar = self.lidar
         self.lidar = self.cleanLidar(list(msg.ranges))
-        self.rightLidar = self.lidar[220:320]
-        self.upperRightLidar = self.lidar[300:359]
+        self.rightLidar = self.lidar[180:359]
+        self.upperRightLidar = self.lidar[330:359]
         self.collisionLidar = self.lidar[358:359]
         self.collisionLidar.extend(self.lidar[0:160])
         self.frontLidar = self.lidar[358:359]
@@ -86,13 +87,26 @@ class MazeSolverSim:
         #raise NotImplementedError
 
     def move_straight(self):
+        rate = rospy.Rate(5)
         twist = Twist()
         collisionDist = self.dist_to_wall(self.collisionLidar)#self.collisionLidar)
         frontDist = self.dist_to_wall(self.frontLidar)
         upperRightDist = self.dist_to_wall(self.upperRightLidar)
+        self.speed = 1.5*min(0.1, 0.1 * self.dist_to_wall(self.collisionLidar),0.1 * frontDist)#self.collisionLidar))
+        # if not self.detectWall(self.lidar, self.prevLidar):
+        #     twist.linear.x = self.speed
+        #     # for i in range(10):
+        #     #     print('no wall detected')
+        #     #     self.cmd_vel_pub.publish(twist)
+        #     #     rate.sleep()
+        #     # self.outsideTurn()
+        #     for i in range(10):
+        #         print('no wall detected')
+        #         self.cmd_vel_pub.publish(twist)
+        #         rate.sleep()
         if collisionDist < 0.15: self.speed = 0.01
-        elif frontDist < 0.2 or upperRightDist < 0.15: self.turn_in_place()
-        else: self.speed = 1.5*min(0.1, 0.1 * self.dist_to_wall(self.collisionLidar),0.1 * frontDist)#self.collisionLidar))
+        elif frontDist < 0.2 or upperRightDist < 0.2: self.turn_in_place()
+
         twist.linear.x = self.speed
         twist.angular.z = self.angular_vel
        
@@ -127,6 +141,15 @@ class MazeSolverSim:
         if min == 3.5:
             return DESIRED_DIST
         return min
+        #return self.avg(rightLidar)
+    
+    def weighted_dist_to_wall(self, lidar):
+        dists = list(lidar)
+        midpt = len(dists) // 2
+        for i in range(len(dists)):
+            dif = max(1, abs(midpt - i))
+            dists[i] = dists[i] * 1/dif
+    
 
     def cleanLidar(self, lidar):
         #print(lidar)
@@ -136,15 +159,27 @@ class MazeSolverSim:
         return lidar
     
     def detectWall(self, lidar, prevLidar):
+        # print(len(self.prevLidar))
+        # print(len(self.lidar))
         dif = lidar[270] - prevLidar[270]
         # print(lidar[270])
         # print(prevLidar[270])
-        #if dif > WALL_THRESHOLD:
-            #ratio = lidar[260] / lidar[215]
-            # print(ratio)
-            # print(math.cos(math.radians(270-225)))
-            #return not ratio >= WALL_THRESHOLD * math.cos(math.radians(260-215))
+        if dif > WALL_THRESHOLD:
+            ratio = lidar[270] / lidar[225]
+        # print(ratio)
+        # print(math.cos(math.radians(270-225)))
+            return ratio <= DETECT_WALL * math.cos(math.radians(270-225))
         return True
+
+    def outsideTurn(self):
+        rate = rospy.Rate(10)
+        self.cmd_vel_pub.publish(Twist())
+        twist = Twist()
+        twist.angular.z = -0.2
+        for i in range(60):
+            print('no wall detected')
+            self.cmd_vel_pub.publish(twist)
+            rate.sleep()
 
     def avg(self, array):
         return sum(array)/len(array)
