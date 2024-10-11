@@ -8,37 +8,30 @@ from tf.transformations import euler_from_quaternion
 
 from pid import PID
 
-DESIRED_DIST = 0.2 #works pretty well with 0.25
-#WALL_THRESHOLD = 0.2 
-#DETECT_WALL = 1.2#compare this to cos ratio of perpendicular and a lidar point 45 deg behind to see if it has found a wall
+DESIRED_DIST = 0.2 #Desired distance to maintain from wall.
 BASE_SPEED = 0.1 #default speed
 SAFETY_THRESHOLD = 0.15 #reduce speed to the safety speed value if distance to wall is less than this value
 TURN_THRESHOLD = 0.2 # initiate a lefthand turn in place if the front lidar is too close to the wall
 SAFETY_SPEED = 0.01 #low speed to reduce likelihood of collision but not get stuck.
 SPEED_MULT = 2 #Used to speed up the robot, should have lower value for a maze with tighter corners.
-#TURN_ANGLE_TOLERANCE = 0.01
 
-#MAX_TURN_SPEED = 0.5
-#MIN_TURN_SPEED = 0.01
 class MazeSolverSim:
     def __init__(self):
         self.cmd_vel_pub = rospy.Publisher('cmd_vel', Twist, queue_size=1)
         self.scan_sub = rospy.Subscriber('/scan', LaserScan, self.scan_cb)
         self.lidar = None
-       # self.prevLidar = None
         self.rightLidar = None
         self.collisionLidar = None #make a front and a left lidar for collision avoidance.
         self.upperRightLidar = None
         self.frontLidar = None
-        self.pid = PID(min_val = -0.8, max_val = 0.8, kp = 1, ki = 0.05, kd = 40) #best, kp=1, ki=0.05, kd=40
+        self.pid = PID(min_val = -0.8, max_val = 0.8, kp = 1, ki = 0.05, kd = 40) #A high derivative term is used to to the small values of each derivative.
         self.speed = 0
         self.angular_vel = 0
+        self.distFromWall = 0
         
         
     def scan_cb(self, msg):
         """Callback function for `self.scan_sub`."""
-        # if self.lidar != None:
-        #     self.prevLidar = self.lidar
         self.lidar = self.cleanLidar(list(msg.ranges)) 
 
         self.rightLidar = self.lidar[180:359] #main lidar to detect wall
@@ -53,16 +46,11 @@ class MazeSolverSim:
         self.frontLidar = self.lidar[358:359]
         self.frontLidar.extend(self.lidar[0:1])
 
-        distFromWall = self.dist_to_wall(self.rightLidar)
-        #print(self.rightLidar)
-        #print(msg.ranges[270])
-        #print('dist: ',distFromWall)
-        #print('angular_vel: ',self.angular_vel)
+        self.distFromWall = self.dist_to_wall(self.rightLidar)
 
         #PID used to determine change in yaw, since distFromWall takes the minimum right side lidar value, it can track
         # the wall when doing outside corner turns, but may fail if the turn is too tight.
-        self.angular_vel = self.pid.compute(setpoint = DESIRED_DIST, measured_value = distFromWall)
-        #print('dist: ',distFromWall)
+        self.angular_vel = self.pid.compute(setpoint = DESIRED_DIST, measured_value = self.distFromWall)
 
 
     def follow_wall(self):
@@ -71,14 +59,13 @@ class MazeSolverSim:
         #waiting for lidar data to be populated.
         while(self.lidar == None or self.collisionLidar == None): #or self.prevLidar == None
             rate.sleep()
-            print('hi')
+            print('Waiting for lidar data')
         while not rospy.is_shutdown():
             self.move_straight()
             rate.sleep()
 
     def move_straight(self):
         """Uses PID control to help robot follow the wall, and also allows for outside corner turns."""
-        rate = rospy.Rate(5)
         twist = Twist()
 
         collisionDist = self.dist_to_wall(self.collisionLidar)#self.collisionLidar)
@@ -92,11 +79,17 @@ class MazeSolverSim:
 
         twist.linear.x = self.speed
         twist.angular.z = self.angular_vel
+
+        print("Speed: ", self.speed)
+        print("Dist. from Right of Wall: ", self.distFromWall)
+        print("Angular Velocity: ", self.angular_vel)
+    
        
         self.cmd_vel_pub.publish(twist)
     
     def turn_in_place(self):
         """Turns the robot to the left in place ~45deg"""
+        print("Close to wall, turning extra!")
         rate = rospy.Rate(1)
         self.cmd_vel_pub.publish(Twist())
         twist = Twist()
