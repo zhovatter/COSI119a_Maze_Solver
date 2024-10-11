@@ -22,8 +22,8 @@ class PID:
         if setpoint == 0 and self.prev_error == 0:
             self.integreal = 0
         self.prev_error = error #previously this was after the pid calculation
-        if abs(error) > 0.3:
-            error = 0.3 * (error/abs(error))
+        # if abs(error) > 0.3:
+        #     error = 0.3 * (error/abs(error))
         pid = self.kp * error + self.ki*self.integral + self.kd * self.derivative
         print('error: ', error)
         # print('int: ', self.integral)
