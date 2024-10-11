@@ -27,6 +27,6 @@ class PID:
         pid = self.kp * error + self.ki*self.integral + self.kd * self.derivative
         print('error: ', error)
         # print('int: ', self.integral)
-        print('der: ', self.derivative)
+        # print('der: ', self.derivative)
         print('PID: ', pid)
         return np.clip(pid, self.min_val, self.max_val)
